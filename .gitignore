@@ -1,3 +1,6 @@
 .venv/
 .cph/
 __pycache__/
+# Ignore local TESS telescope data cache
+lk_cache/
+
