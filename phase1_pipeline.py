@@ -221,17 +221,19 @@ is_systematic = (
 # ─────────────────────────────────────────────
 # FINAL CLASSIFICATION HEURISTICS
 # ─────────────────────────────────────────────
+
 if is_systematic:
-    classification = "Variable Star / False Positive (Likely Systematic/Activity)"
+    classification = "Quiet/Variable Star (TESS Systematic/Activity)"
 elif snr > 8.0 and n_transits >= 2 and confidence >= 70:
+    # If the signal is real and physical, classify by depth
     if transit_depth < 0.025:
-        classification = "Likely Exoplanet"
+        classification = "Exoplanet Host Star (Likely Planet Detected)"
     else:
-        classification = "Likely Eclipsing Binary"
+        classification = "Eclipsing Binary Star System"
 elif n_transits < 2:
     classification = "Single Transit Candidate - More Data Needed"
 else:
-    classification = "Variable Star / False Positive"
+    classification = "Quiet/Variable Star (No Planets Detected)"
 
 print(f"\n🎯 PHASE 2 RESULTS")
 print(f"  Period       : {best_period:.4f} days")
