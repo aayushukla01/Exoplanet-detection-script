@@ -9,6 +9,44 @@ from scipy.stats import binned_statistic
 from astropy.timeseries import BoxLeastSquares
 
 # ─────────────────────────────────────────────
+# SELF-HEALING DOWNLOAD ROUTINE
+# ─────────────────────────────────────────────
+def download_with_self_healing(search_result, cache_dir, target_tic):
+    """Downloads light curves, automatically detecting and cleaning up corrupt FITS files on failure."""
+    try:
+        return search_result.download_all(download_dir=cache_dir)
+    except Exception as e:
+        err_msg = str(e)
+        is_corrupt = (
+            "corrupt" in err_msg.lower() or 
+            "not recognized as a supported data product" in err_msg.lower() or
+            "error in reading data product" in err_msg.lower()
+        )
+        if is_corrupt:
+            import shutil
+            numeric_id = "".join(filter(str.isdigit, target_tic))
+            mast_dir = os.path.join(cache_dir, "mastDownload")
+            if os.path.exists(mast_dir) and numeric_id:
+                for root, dirs, files in os.walk(mast_dir, topdown=False):
+                    for name in files:
+                        if numeric_id in name:
+                            try:
+                                os.remove(os.path.join(root, name))
+                            except Exception:
+                                pass
+                    for name in dirs:
+                        if numeric_id in name:
+                            try:
+                                shutil.rmtree(os.path.join(root, name))
+                            except Exception:
+                                pass
+            # Retry download after self-healing cache cleanup
+            return search_result.download_all(download_dir=cache_dir)
+        else:
+            raise e
+
+
+# ─────────────────────────────────────────────
 # TARGET INPUT SELECTOR & AUTO-DETECTION
 # ─────────────────────────────────────────────
 print("🚀 TESS Exoplanet Search Pipeline")
@@ -129,8 +167,7 @@ for idx, current_tic in enumerate(tic_list):
         print(f"📥 Found {len(search_result)} products. Downloading in parallel...")
         cache_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "lk_cache")
 
-        # We can safely use download_all because we filtered out the buggy 20-second files!
-        lc_collection = search_result.download_all(download_dir=cache_dir)
+        lc_collection = download_with_self_healing(search_result, cache_dir, formatted_tic)
         if lc_collection is None or len(lc_collection) == 0:
             print(f"  ⚠️ Skipping {formatted_tic}: Download failed.")
             continue
@@ -425,6 +462,28 @@ for idx, current_tic in enumerate(tic_list):
         filename = "detection_results.csv"
         results.to_csv(filename, mode="a", header=not os.path.exists(filename), index=False)
         print(f"✅ Results saved to {filename}")
+        
+        # Post-analysis cache cleanup (delete downloaded FITS files for this target to keep disk 100% clean)
+        try:
+            numeric_id = "".join(filter(str.isdigit, formatted_tic))
+            mast_dir = os.path.join(cache_dir, "mastDownload")
+            if os.path.exists(mast_dir) and numeric_id:
+                import shutil
+                for root, dirs, files in os.walk(mast_dir, topdown=False):
+                    for name in files:
+                        if numeric_id in name:
+                            try:
+                                os.remove(os.path.join(root, name))
+                            except Exception:
+                                pass
+                    for name in dirs:
+                        if numeric_id in name:
+                            try:
+                                shutil.rmtree(os.path.join(root, name))
+                            except Exception:
+                                pass
+        except Exception:
+            pass
         
     except Exception as target_error:
         print(f"  ❌ Failed to process {current_tic}: {target_error}")

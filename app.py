@@ -205,6 +205,44 @@ def run_bls_and_score(time, flattened_flux, raw_flux_plot, trend_flux, target_na
 
 
 # ─────────────────────────────────────────────
+# SELF-HEALING DOWNLOAD ROUTINE
+# ─────────────────────────────────────────────
+def download_with_self_healing(search_result, cache_dir, target_tic):
+    """Downloads light curves, automatically detecting and cleaning up corrupt FITS files on failure."""
+    try:
+        return search_result.download_all(download_dir=cache_dir)
+    except Exception as e:
+        err_msg = str(e)
+        is_corrupt = (
+            "corrupt" in err_msg.lower() or 
+            "not recognized as a supported data product" in err_msg.lower() or
+            "error in reading data product" in err_msg.lower()
+        )
+        if is_corrupt:
+            import shutil
+            numeric_id = "".join(filter(str.isdigit, target_tic))
+            mast_dir = os.path.join(cache_dir, "mastDownload")
+            if os.path.exists(mast_dir) and numeric_id:
+                for root, dirs, files in os.walk(mast_dir, topdown=False):
+                    for name in files:
+                        if numeric_id in name:
+                            try:
+                                os.remove(os.path.join(root, name))
+                            except Exception:
+                                pass
+                    for name in dirs:
+                        if numeric_id in name:
+                            try:
+                                shutil.rmtree(os.path.join(root, name))
+                            except Exception:
+                                pass
+            # Retry download after self-healing cache cleanup
+            return search_result.download_all(download_dir=cache_dir)
+        else:
+            raise e
+
+
+# ─────────────────────────────────────────────
 # MAST SEARCH WORKFLOW
 # ─────────────────────────────────────────────
 def analyze_mast_target(target_tic, progress_bar=None, status_text=None, max_sectors=3):
@@ -235,7 +273,7 @@ def analyze_mast_target(target_tic, progress_bar=None, status_text=None, max_sec
         progress_bar.progress(25)
         
     cache_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "lk_cache")
-    lc_collection = search_result.download_all(download_dir=cache_dir)
+    lc_collection = download_with_self_healing(search_result, cache_dir, formatted_tic)
     if lc_collection is None or len(lc_collection) == 0:
         raise RuntimeError("Failed to download light curves.")
         
@@ -304,7 +342,31 @@ def analyze_mast_target(target_tic, progress_bar=None, status_text=None, max_sec
     if progress_bar:
         progress_bar.progress(50)
 
-    return run_bls_and_score(time, flattened_flux, raw_flux_plot, trend_flux, formatted_tic, baseline, len(sector_lcs))
+    results = run_bls_and_score(time, flattened_flux, raw_flux_plot, trend_flux, formatted_tic, baseline, len(sector_lcs))
+    
+    # Post-analysis cache cleanup (delete downloaded FITS files for this target to keep disk 100% clean)
+    try:
+        numeric_id = "".join(filter(str.isdigit, formatted_tic))
+        mast_dir = os.path.join(cache_dir, "mastDownload")
+        if os.path.exists(mast_dir) and numeric_id:
+            import shutil
+            for root, dirs, files in os.walk(mast_dir, topdown=False):
+                for name in files:
+                    if numeric_id in name:
+                        try:
+                            os.remove(os.path.join(root, name))
+                        except Exception:
+                            pass
+                for name in dirs:
+                    if numeric_id in name:
+                        try:
+                            shutil.rmtree(os.path.join(root, name))
+                        except Exception:
+                            pass
+    except Exception:
+        pass
+        
+    return results
 
 
 # ─────────────────────────────────────────────
