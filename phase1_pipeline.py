@@ -23,23 +23,42 @@ def download_with_self_healing(search_result, cache_dir, target_tic):
             "error in reading data product" in err_msg.lower()
         )
         if is_corrupt:
+            import re
             import shutil
-            numeric_id = "".join(filter(str.isdigit, target_tic))
-            mast_dir = os.path.join(cache_dir, "mastDownload")
-            if os.path.exists(mast_dir) and numeric_id:
-                for root, dirs, files in os.walk(mast_dir, topdown=False):
-                    for name in files:
-                        if numeric_id in name:
-                            try:
-                                os.remove(os.path.join(root, name))
-                            except Exception:
-                                pass
-                    for name in dirs:
-                        if numeric_id in name:
-                            try:
-                                shutil.rmtree(os.path.join(root, name))
-                            except Exception:
-                                pass
+            # Extract absolute FITS file paths from the error message (both Linux and Windows)
+            fits_paths = re.findall(r'(/[^\s]+\.fits|[a-zA-Z]:\\[^\s]+\.fits)', err_msg)
+            
+            cleaned_any = False
+            for path in fits_paths:
+                path = path.strip().rstrip('.').rstrip(',')
+                if os.path.exists(path):
+                    try:
+                        os.remove(path)
+                        cleaned_any = True
+                        parent_dir = os.path.dirname(path)
+                        if os.path.exists(parent_dir):
+                            shutil.rmtree(parent_dir)
+                    except Exception:
+                        pass
+            
+            # Fallback: if regex didn't extract path, clear the target's folders by TIC ID
+            if not cleaned_any:
+                numeric_id = "".join(filter(str.isdigit, target_tic))
+                mast_dir = os.path.join(cache_dir, "mastDownload")
+                if os.path.exists(mast_dir) and numeric_id:
+                    for root, dirs, files in os.walk(mast_dir, topdown=False):
+                        for name in files:
+                            if numeric_id in name:
+                                try:
+                                    os.remove(os.path.join(root, name))
+                                except Exception:
+                                    pass
+                        for name in dirs:
+                            if numeric_id in name:
+                                try:
+                                    shutil.rmtree(os.path.join(root, name))
+                                except Exception:
+                                    pass
             # Retry download after self-healing cache cleanup
             return search_result.download_all(download_dir=cache_dir)
         else:
