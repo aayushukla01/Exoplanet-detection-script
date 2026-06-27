@@ -3,7 +3,7 @@ lk_cache/
 plots/
 __pycache__/
 *.pyc
-.streamlit/
+
 .idea/
 .vscode/
 *.log
